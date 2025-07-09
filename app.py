@@ -120,7 +120,7 @@ def handle_llm_query():
         )
         
         final_answer = final_completion.choices[0].message.content.strip()
-        return jsonify({'answer': final_answer})
+        return jsonify({'answer': final_answer, 'data': [dict(row) for row in results], 'question': user_question})
 
     except openai.APIError as e:
         error_message = f"An error occurred with the OpenAI API: {e}"

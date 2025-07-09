@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>MCP Natural Language Console</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
     <style>
         /* --- Basic Setup & Theme --- */
         body {
@@ -103,12 +104,17 @@
         <div class="log-entry response">Welcome! Ask a question about the usage data in plain English. Type 'help' for examples.</div>
     </div>
 
+    <div id="chart-container" style="display: none; width: 100%; height: 300px; margin-top: 10px; background-color: #000; padding: 10px; border: 1px solid #333;">
+        <canvas id="myChart"></canvas>
+    </div>
+
     <form id="input-form">
         <input type="text" id="command-input" placeholder="e.g., how many hours did alice spend on photoshop?" autocomplete="off" autofocus>
         <button type="submit">Send</button>
     </form>
 
     <script>
+        let myChartInstance = null; // To hold our Chart.js instance
         // Get references to our HTML elements
         const consoleDiv = document.getElementById('console');
         const form = document.getElementById('input-form');
@@ -184,27 +190,167 @@
 
                 // Update the "thinking" message with the final answer from the server
                 if (response.ok) {
-                    thinkingLog.textContent = data.answer;
+                    thinkingLog.textContent = data.answer; // Display AI's natural language answer
+
+                    // If raw data is returned, attempt to render a chart
+                    if (data.data && data.data.length > 0) {
+                        try {
+                            renderChart(data.data, data.question);
+                            document.getElementById('chart-container').style.display = 'block';
+                        } catch (chartError) {
+                            console.error("Error rendering chart:", chartError);
+                            addLog(`(Note: Could not render chart: ${chartError.message})`, 'error');
+                            document.getElementById('chart-container').style.display = 'none';
+                        }
+                    } else {
+                        document.getElementById('chart-container').style.display = 'none';
+                    }
+
                 } else {
                     // Handle errors returned from the API (e.g., API key not set)
                     thinkingLog.textContent = `Server Error: ${data.answer || data.error}`;
                     thinkingLog.className = 'log-entry error';
+                    document.getElementById('chart-container').style.display = 'none';
                 }
 
             } catch (error) {
                 // Handle network errors or if the server is down
                 thinkingLog.textContent = `Network or connection error: ${error.message}`;
                 thinkingLog.className = 'log-entry error';
+                document.getElementById('chart-container').style.display = 'none';
             } finally {
                 scrollToBottom();
             }
         }
 
         /**
+         * Renders a chart based on the provided data and inferred chart type.
+         * @param {Array<Object>} data - The raw data from the database.
+         * @param {string} question - The original user question.
+         */
+        function renderChart(data, question) {
+            // Destroy existing chart if it exists
+            if (myChartInstance) {
+                myChartInstance.destroy();
+            }
+
+            const ctx = document.getElementById('myChart').getContext('2d');
+            let chartConfig;
+
+            // Simple heuristics to determine chart type based on data structure and question
+            const keys = Object.keys(data[0]);
+            const isAggregation = keys.includes('result') && keys.length === 2; // e.g., user, result or app, result
+
+            if (isAggregation) {
+                // Bar chart for aggregates like counts or sums per category
+                const labels = data.map(item => Object.values(item)[0]); // First key is category (user, app, etc.)
+                const values = data.map(item => item.result);
+
+                chartConfig = {
+                    type: 'bar',
+                    data: {
+                        labels: labels,
+                        datasets: [{
+                            label: 'Result',
+                            data: values,
+                            backgroundColor: '#569cd6',
+                            borderColor: '#333',
+                            borderWidth: 1
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            title: {
+                                display: true,
+                                text: question || 'Query Result',
+                                color: '#d4d4d4'
+                            }
+                        },
+                        scales: {
+                            x: {
+                                ticks: { color: '#d4d4d4' },
+                                grid: { color: '#333' }
+                            },
+                            y: {
+                                ticks: { color: '#d4d4d4' },
+                                grid: { color: '#333' }
+                            }
+                        }
+                    }
+                };
+            } else if (keys.includes('log_date') && keys.includes('duration_seconds')) {
+                // Line chart for time-series data
+                // This would require more sophisticated grouping/aggregation in JS if not already done by SQL
+                // For simplicity, let's just show a basic bar for now, or adapt if the SQL gives daily aggregation
+                 const labels = data.map(item => new Date(item.log_date).toLocaleDateString());
+                 const values = data.map(item => item.duration_seconds);
+
+                 chartConfig = {
+                     type: 'line', // Line chart for time series
+                     data: {
+                         labels: labels,
+                         datasets: [{
+                             label: 'Duration (seconds)',
+                             data: values,
+                             borderColor: '#6a9955',
+                             backgroundColor: 'rgba(106, 153, 85, 0.2)',
+                             borderWidth: 2,
+                             fill: true,
+                             tension: 0.1
+                         }]
+                     },
+                     options: {
+                         responsive: true,
+                         maintainAspectRatio: false,
+                         plugins: {
+                             legend: {
+                                 display: true,
+                                 labels: { color: '#d4d4d4' }
+                             },
+                             title: {
+                                 display: true,
+                                 text: question || 'Query Result',
+                                 color: '#d4d4d4'
+                             }
+                         },
+                         scales: {
+                             x: {
+                                 ticks: { color: '#d4d4d4' },
+                                 grid: { color: '#333' }
+                             },
+                             y: {
+                                 ticks: { color: '#d4d4d4' },
+                                 grid: { color: '#333' }
+                             }
+                         }
+                     }
+                 };
+
+            } else {
+                // Default to a table or general bar chart if no specific pattern
+                console.warn("Could not infer specific chart type. Displaying raw data as text.");
+                // Optionally display the raw data in a more readable format if no chart
+                document.getElementById('chart-container').style.display = 'none';
+                addLog('Raw Data (click to inspect in console):', 'response');
+                addLog(JSON.stringify(data, null, 2), 'response');
+                return; // Do not create a chart instance
+            }
+
+            myChartInstance = new Chart(ctx, chartConfig);
+        }
+
+        /**
          * Automatically scrolls the console to the bottom.
          */
         function scrollToBottom() {
-            consoleDiv.scrollTop = consoleDiv.scrollHeight;
+            setTimeout(() => { // Use a timeout to ensure DOM update is complete
+                consoleDiv.scrollTop = consoleDiv.scrollHeight;
+            }, 100);
         }
 
     </script>

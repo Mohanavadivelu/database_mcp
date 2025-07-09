@@ -90,11 +90,90 @@ By default, the application will be available at `http://127.0.0.1:5000`. Open t
 
 ## How to Use the Console
 
-Once the application is running, you can ask questions in plain English, such as:
-- *How many hours did alice spend on photoshop?*
-- *Show me all usage from bob*
-- *What was the longest session in seconds?*
-- *List all users on the windows platform*
-- *What legacy apps were used?*
+Once the application is running, you can ask questions in plain English. The system will attempt to generate a relevant chart (bar or line, depending on the data) along with a natural language answer.
 
-You can also type `help` for more examples or `clear` to clear the console screen.
+**Important:** Enter one question at a time.
+
+Here are some examples of prompts you can use:
+
+### Examples for Chart Generation
+
+**For Bar Charts (aggregated data):**
+-   "Show me the total `duration_seconds` for each `application_name`."
+-   "Count the number of unique `user`s for each `platform`."
+-   "What are the top 5 `application_name`s by `duration_seconds`?"
+-   "How many `legacy_app`s are there?"
+-   "List the total `duration_seconds` for each `user`."
+
+**For Line Charts (time-series data - may require specific date queries):**
+-   "Show total `duration_seconds` per `log_date`."
+-   "Daily usage trends for VSCode."
+
+**General Queries:**
+-   "What platforms are most common?"
+-   "Show me the average session duration for each application."
+
+You can also type `help` for more general examples or `clear` to clear the console screen.
+
+## System Architecture
+
+To help understand the project structure and data flow, here are a class diagram and a flow diagram. These diagrams are written in [Mermaid syntax](https://mermaid.js.org/), which can be rendered directly in GitHub, GitLab, VS Code, and other Markdown viewers.
+
+### Class Diagram
+
+```mermaid
+classDiagram
+    direction LR
+    class App{
+        +handle_llm_query()
+        +index()
+    }
+    class Database{
+        +init_db()
+        +get_db_connection()
+    }
+    class Prompts{
+        +get_sql_generation_prompt()
+        +get_data_interpretation_prompt()
+    }
+    class PopulateDatabase{
+        +main()
+        +generate_and_insert_data()
+    }
+    class IndexHtml{
+        +JavaScript logic
+        +Chart.js rendering
+    }
+
+    App "1" -- "1" Database : uses
+    App "1" -- "1" Prompts : uses
+    App "1" -- "1" IndexHtml : renders
+    App "1" -- "1" PopulateDatabase : calls
+    Database "1" -- "1" SQLite : connects to
+    PopulateDatabase "1" -- "1" SQLite : populates
+    IndexHtml "1" -- "1" App : sends requests to
+    IndexHtml "1" -- "1" ChartJs : uses
+```
+
+### Request Flow Diagram
+
+```mermaid
+graph TD
+    A[User Input (index.html)] --> B{Frontend JavaScript};
+    B --> C[HTTP POST /api/llm_query];
+    C --> D[Flask App (app.py)];
+    D --> E{Text-to-SQL Prompt (prompts.py)};
+    E --> F[OpenAI API];
+    F --> G[Generated SQL Query];
+    G --> H[Execute SQL (app.py)];
+    H --> I[SQLite (usage.db)];
+    I --> J[Query Results];
+    J --> K{Data-to-Text Interpretation (prompts.py)};
+    K --> L[OpenAI API];
+    L --> M[Natural Language Answer];
+    J --> N[Raw Data (JSON)];
+    M & N --> O[Flask App Response];
+    O --> P{Frontend JavaScript};
+    P --> Q[Display Answer (index.html)];
+    P --> R[Render Chart (Chart.js)];
+```
