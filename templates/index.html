@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MCP Natural Language Console</title>
+    <style>
+        /* --- Basic Setup & Theme --- */
+        body {
+            font-family: 'Courier New', Courier, monospace;
+            background-color: #1e1e1e;
+            color: #d4d4d4;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            height: 100vh;
+            box-sizing: border-box;
+        }
+
+        /* --- Header --- */
+        h1 {
+            color: #569cd6;
+            border-bottom: 1px solid #333;
+            padding-bottom: 10px;
+            margin-top: 0;
+        }
+
+        /* --- Main Console Display --- */
+        #console {
+            border: 1px solid #333;
+            flex-grow: 1; /* Takes up available vertical space */
+            overflow-y: scroll;
+            padding: 10px;
+            background-color: #000;
+            margin-bottom: 10px;
+            scroll-behavior: smooth;
+        }
+
+        /* --- Log Entry Styling --- */
+        .log-entry {
+            padding: 5px;
+            margin-bottom: 5px;
+            white-space: pre-wrap; /* Crucial for showing formatted JSON */
+            word-wrap: break-word;
+            line-height: 1.4;
+        }
+
+        .prompt::before {
+            content: '> ';
+            color: #6a9955; /* Green for user input */
+            font-weight: bold;
+        }
+
+        .response {
+            color: #9cdcfe; /* Light blue for AI response */
+        }
+
+        .error {
+            color: #f44747; /* Red for errors */
+        }
+
+        /* --- Input Form --- */
+        #input-form {
+            display: flex;
+        }
+
+        #command-input {
+            flex-grow: 1;
+            background: #333;
+            border: 1px solid #555;
+            color: #d4d4d4;
+            padding: 10px;
+            font-family: inherit;
+            font-size: 1em;
+        }
+
+        #command-input:focus {
+            outline: none;
+            border-color: #569cd6;
+        }
+
+        button {
+            background-color: #569cd6;
+            color: white;
+            border: none;
+            padding: 10px 15px;
+            cursor: pointer;
+            font-family: inherit;
+            font-size: 1em;
+        }
+
+        button:hover {
+            background-color: #4a8ac9;
+        }
+    </style>
+</head>
+<body>
+
+    <h1>MCP Natural Language Console</h1>
+
+    <div id="console">
+        <div class="log-entry response">Welcome! Ask a question about the usage data in plain English. Type 'help' for examples.</div>
+    </div>
+
+    <form id="input-form">
+        <input type="text" id="command-input" placeholder="e.g., how many hours did alice spend on photoshop?" autocomplete="off" autofocus>
+        <button type="submit">Send</button>
+    </form>
+
+    <script>
+        // Get references to our HTML elements
+        const consoleDiv = document.getElementById('console');
+        const form = document.getElementById('input-form');
+        const input = document.getElementById('command-input');
+
+        /**
+         * Handles the form submission event.
+         */
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault(); // Stop the page from reloading
+            const question = input.value.trim();
+            if (!question) return;
+
+            addLog(question, 'prompt'); // Show the user's question in the console
+            input.value = ''; // Clear the input box
+
+            const command = question.toLowerCase();
+
+            // Handle hard-coded commands first
+            if (command === 'help') {
+                const helpText =
+                    "This is an LLM-powered console. Ask a question about the usage data in plain English!\n\n" +
+                    "Examples:\n" +
+                    "  - how many hours did alice spend on photoshop?\n" +
+                    "  - show me all usage from bob\n" +
+                    "  - what was the longest session in seconds?\n" +
+                    "  - list all users on the windows platform\n" +
+                    "  - what legacy apps were used?\n\n" +
+                    "Other commands:\n" +
+                    "  - clear: Clear the console screen.";
+                addLog(helpText, 'response');
+            } else if (command === 'clear') {
+                consoleDiv.innerHTML = '';
+            } else {
+                // If it's not a known command, treat it as a natural language query for the LLM
+                await performLlmQuery(question);
+            }
+        });
+
+        /**
+         * Adds a new message to the console log.
+         * @param {string} message - The text to display.
+         * @param {string} type - The class name for styling ('prompt', 'response', or 'error').
+         * @returns {HTMLElement} The new log element created.
+         */
+        function addLog(message, type) {
+            const logEntry = document.createElement('div');
+            logEntry.className = 'log-entry ' + type;
+            logEntry.textContent = message;
+            consoleDiv.appendChild(logEntry);
+            scrollToBottom();
+            return logEntry; // Return the element for potential updates
+        }
+
+        /**
+         * Sends the user's question to the backend and displays the answer.
+         * @param {string} question - The user's natural language question.
+         */
+        async function performLlmQuery(question) {
+            // Give immediate feedback that the app is working
+            const thinkingLog = addLog('...', 'response');
+
+            try {
+                const response = await fetch('/api/llm_query', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ question: question }),
+                });
+
+                const data = await response.json();
+
+                // Update the "thinking" message with the final answer from the server
+                if (response.ok) {
+                    thinkingLog.textContent = data.answer;
+                } else {
+                    // Handle errors returned from the API (e.g., API key not set)
+                    thinkingLog.textContent = `Server Error: ${data.answer || data.error}`;
+                    thinkingLog.className = 'log-entry error';
+                }
+
+            } catch (error) {
+                // Handle network errors or if the server is down
+                thinkingLog.textContent = `Network or connection error: ${error.message}`;
+                thinkingLog.className = 'log-entry error';
+            } finally {
+                scrollToBottom();
+            }
+        }
+
+        /**
+         * Automatically scrolls the console to the bottom.
+         */
+        function scrollToBottom() {
+            consoleDiv.scrollTop = consoleDiv.scrollHeight;
+        }
+
+    </script>
+
+</body>
+</html>
