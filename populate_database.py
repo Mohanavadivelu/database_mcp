@@ -1,7 +1,8 @@
+# populate_database.py
+
 import sqlite3
 import random
 from datetime import date, timedelta, datetime
-import collections
 
 # --- 1. CORE CONFIGURATION ---
 
@@ -16,7 +17,6 @@ FEMALE_NAMES = [
     'Anvi', 'Aria', 'Avani', 'Bhavna', 'Charvi', 'Diya', 'Esha', 'Fatima', 'Gauri', 'Ira', 'Ishani', 'Jiya',
     'Kavya', 'Khushi', 'Kiara', 'Larisa', 'Lavanya', 'Mahika', 'Maryam', 'Maya', 'Meher', 'Myra', 'Navya',
     'Neha', 'Nidhi', 'Pari', 'Priya', 'Rhea', 'Riya', 'Saanvi', 'Sahana', 'Sameera', 'Sara', 'Shreya',
-
     'Siya', 'Suhana', 'Tara', 'Vanya', 'Veda', 'Zoya', 'Aisha', 'Deepika', 'Freya', 'Inaya', 'Jasmine',
     'Mira', 'Naina', 'Prisha', 'Zara'
 ]
@@ -47,49 +47,42 @@ MONITOR_VERSIONS = ['1.2.0', '1.3.0', '1.3.1']
 
 # --- 3. PERSONA-BASED BEHAVIOR MODELING ---
 
-# --- 3. PERSONA-BASED BEHAVIOR MODELING ---
-
 PERSONAS = {
     'Developer': {
-        # Weights for [VSCode, Photoshop, Figma, Chrome, Slack, Excel, Zoom, Tableau, AutoCAD, Blender]
-        'app_weights':   [30, 1, 5, 20, 15, 5, 5, 1, 1, 2],
+        'app_weights':   [30, 1, 5, 20, 15, 5, 5, 1, 1, 2], # High chance for VSCode, Chrome, Slack
         'platform_weights': [60, 20, 20] # Weights for [Windows, macOS, Linux]
     },
     'Designer': {
-        'app_weights':   [5, 30, 30, 10, 5, 1, 2, 2, 1, 15],
+        'app_weights':   [5, 30, 30, 10, 5, 1, 2, 2, 1, 15], # High chance for Photoshop, Figma, Blender
         'platform_weights': [30, 65, 5]
     },
     'Manager': {
-        # THE FIX IS ON THE NEXT LINE: Added a final '1' to make the list 10 items long.
-        'app_weights':   [1, 1, 1, 25, 25, 25, 15, 5, 1, 1],
+        'app_weights':   [1, 1, 1, 25, 25, 25, 15, 5, 1, 1], # Corrected: Now has 10 weights
         'platform_weights': [50, 50, 0]
     },
     'Data Analyst': {
-        'app_weights':   [5, 1, 1, 15, 10, 30, 5, 30, 1, 2],
+        'app_weights':   [5, 1, 1, 15, 10, 30, 5, 30, 1, 2], # High chance for Excel, Tableau
         'platform_weights': [70, 30, 0]
     }
 }
 
 def create_user_profiles():
     """Assigns a persona and a random activity level to each user."""
-    print("Creating realistic user profiles...")
     profiles = {}
     persona_list = list(PERSONAS.keys())
     for user in ALL_USERS:
         profiles[user] = {
             'persona': random.choice(persona_list),
-            'daily_activity_chance': random.uniform(0.65, 0.95) # How likely they are to be active on any given day
+            'daily_activity_chance': random.uniform(0.65, 0.95)
         }
     return profiles
 
 # --- 4. DATABASE OPERATIONS ---
 
 def create_connection(db_file):
-    """Create a database connection to the SQLite database."""
     return sqlite3.connect(db_file)
 
 def clear_existing_data(conn):
-    """Deletes all records from the usage_data table and resets the counter."""
     print("Clearing existing data from the database...")
     cur = conn.cursor()
     cur.execute('DELETE FROM usage_data')
@@ -98,9 +91,6 @@ def clear_existing_data(conn):
     print("Database cleared.")
 
 def generate_and_insert_data(conn):
-    """Generate and insert realistic test data."""
-    
-    # Step 1: Create our user behavior models
     user_profiles = create_user_profiles()
     inactive_users = set(random.sample(ALL_USERS, NUM_INACTIVE_USERS))
     print(f"Designated {len(inactive_users)} users to be inactive for the last 30 days.")
@@ -117,55 +107,36 @@ def generate_and_insert_data(conn):
     
     current_date = start_date
     while current_date <= end_date:
-        if current_date.weekday() >= 5: # Skip weekends
+        if current_date.weekday() >= 5:
             current_date += timedelta(days=1)
             continue
             
         for user in ALL_USERS:
-            # RULE: Skip if user is designated as inactive and the date is within the last 30 days
             if user in inactive_users and current_date > thirty_days_ago:
                 continue
 
-            # RULE: Each user has a chance to be inactive on any given day
             profile = user_profiles[user]
             if random.random() > profile['daily_activity_chance']:
                 continue
 
-            # User is active today, let's generate a record based on their persona
             persona_data = PERSONAS[profile['persona']]
-            
-            # Choose app and platform based on weighted probabilities
             app_name = random.choices(APP_NAMES, weights=persona_data['app_weights'], k=1)[0]
             platform = random.choices(['Windows', 'macOS', 'Linux'], weights=persona_data['platform_weights'], k=1)[0]
             
-            # Get app-specific details
             app_profile = APP_PROFILES[app_name]
             app_version = random.choice(app_profile['versions'])
             duration = random.randint(app_profile['min_duration'], app_profile['max_duration'])
             
-            # Generate a random timestamp within work hours (9 AM to 6 PM UTC)
-            log_time = datetime(
-                current_date.year, current_date.month, current_date.day,
-                random.randint(9, 17), random.randint(0, 59), random.randint(0, 59)
-            )
+            log_time = datetime(current_date.year, current_date.month, current_date.day,
+                                random.randint(9, 17), random.randint(0, 59), random.randint(0, 59))
             
-            record = (
-                random.choice(MONITOR_VERSIONS),
-                platform,
-                user,
-                app_name,
-                app_version,
-                log_time.isoformat() + "Z", # ISO 8601 format
-                app_profile['legacy'],
-                duration
-            )
+            record = (random.choice(MONITOR_VERSIONS), platform, user, app_name, app_version,
+                      log_time.isoformat() + "Z", app_profile['legacy'], duration)
             records_to_insert.append(record)
 
-        # Batch insert for efficiency
         if len(records_to_insert) > 1000:
             sql = """INSERT INTO usage_data (monitor_app_version, platform, user, application_name, 
-                     application_version, log_date, legacy_app, duration_seconds) 
-                     VALUES (?, ?, ?, ?, ?, ?, ?, ?)"""
+                     application_version, log_date, legacy_app, duration_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"""
             cursor.executemany(sql, records_to_insert)
             conn.commit()
             total_records += len(records_to_insert)
@@ -174,11 +145,9 @@ def generate_and_insert_data(conn):
             
         current_date += timedelta(days=1)
 
-    # Insert any remaining records
     if records_to_insert:
         sql = """INSERT INTO usage_data (monitor_app_version, platform, user, application_name, 
-                 application_version, log_date, legacy_app, duration_seconds) 
-                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)"""
+                 application_version, log_date, legacy_app, duration_seconds) VALUES (?, ?, ?, ?, ?, ?, ?, ?)"""
         cursor.executemany(sql, records_to_insert)
         conn.commit()
         total_records += len(records_to_insert)
@@ -188,9 +157,7 @@ def generate_and_insert_data(conn):
     print(f"Total realistic records inserted: {total_records}")
     print("---------------------------------")
 
-
 def main():
-    """Main function to orchestrate database population."""
     conn = create_connection(DATABASE_FILE)
     if conn:
         clear_existing_data(conn)

@@ -1,87 +1,75 @@
 # app.py
-#
-# This file contains the complete Flask server for the MCP (Monitoring and Control Panel).
-# It features a natural language interface powered by a two-step LLM process (OpenAI's GPT)
-# to query a SQLite database and provide human-readable answers.
 
 import os
 import sqlite3
 import json
 import openai
 from flask import Flask, jsonify, render_template, request
+from dotenv import load_dotenv
 
 # --- 1. CONFIGURATION ---
+# Load environment variables from .env file if present
+load_dotenv()
 
-# Database configuration
 DATABASE = 'usage.db'
 
-# The database schema. This is critical context for the LLM to generate correct SQL.
-DATABASE_SCHEMA = """
-CREATE TABLE usage_data (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    monitor_app_version TEXT NOT NULL,
-    platform TEXT NOT NULL,
-    user TEXT NOT NULL,
-    application_name TEXT NOT NULL,
-    application_version TEXT NOT NULL,
-    log_date TEXT NOT NULL, -- Stored as ISO 8601 format text (e.g., '2023-10-27T10:00:00Z')
-    legacy_app BOOLEAN NOT NULL, -- 1 for True, 0 for False
-    duration_seconds INTEGER NOT NULL
-)
-"""
-
-# OpenAI API client initialization.
-# It automatically looks for the OPENAI_API_KEY environment variable.
-try:
-    openai.api_key = os.getenv("OPENAI_API_KEY")
-    if not openai.api_key:
-        print("!!! WARNING: OPENAI_API_KEY environment variable not set. LLM features will fail.")
-except Exception as e:
-    print(f"Error initializing OpenAI client: {e}")
-
+# More robust API key handling
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY:
+    print("!!! WARNING: OPENAI_API_KEY environment variable not set. LLM features will fail.")
+    print("Create a .env file with OPENAI_API_KEY=your_key or set it in your environment.")
+else:
+    try:
+        openai.api_key = OPENAI_API_KEY
+    except Exception as e:
+        print(f"Error initializing OpenAI client: {e}")
 
 # --- 2. FLASK APPLICATION SETUP ---
-
 app = Flask(__name__)
 
-
 # --- 3. HELPER FUNCTIONS ---
-
 def get_db_connection():
-    """Establishes a connection to the SQLite database."""
     conn = sqlite3.connect(DATABASE)
-    # Allows accessing columns by name (like a dictionary).
     conn.row_factory = sqlite3.Row
     return conn
 
-
 # --- 4. API ENDPOINTS ---
-
 @app.route('/api/llm_query', methods=['POST'])
 def handle_llm_query():
-    """
-    Handles a natural language query using a two-step LLM process:
-    1. Text-to-SQL: Convert the user's question into an SQL query.
-    2. Data-to-Text: Interpret the SQL result to formulate a human-readable answer.
-    """
-    user_question = request.json.get('question')
+    MAX_ROWS_FOR_LLM_SUMMARY = 50
+    
+    # Input validation
+    if not request.is_json:
+        return jsonify({'error': 'Request must be JSON'}), 400
+    
+    user_question = request.json.get('question', '').strip()
     if not user_question:
         return jsonify({'error': 'No question provided'}), 400
+    
+    # Check for potentially harmful inputs
+    dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'TRUNCATE']
+    if any(keyword in user_question.upper() for keyword in dangerous_keywords):
+        return jsonify({'error': 'Potentially harmful question detected'}), 400
     
     if not openai.api_key:
         return jsonify({'answer': "Server Error: OpenAI API key is not configured."}), 500
 
     try:
-        # === STEP 1: TEXT-TO-SQL -- Generate the SQL Query ===
-        sql_generation_prompt = f"""
-        You are an expert SQLite assistant. Your task is to convert a user's natural language question into a single, valid SQLite query based on the following database schema.
-        - The database table is named `usage_data`.
-        - The schema is: {DATABASE_SCHEMA}
-        - When asked for the 'most used' or 'most frequent' app, use COUNT. When asked for 'longest used', use SUM of duration_seconds.
-        - CRITICAL RULE: When calculating (SUM, COUNT, etc.), always alias the result column as `result`.
-        - Compare strings case-insensitively using `lower()`.
-        - Only respond with the raw SQL query and nothing else.
-        """
+        # Import prompts
+        from prompts import get_sql_generation_prompt, get_data_interpretation_prompt
+        
+        # === STEP 1: TEXT-TO-SQL ===
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='usage_data'")
+        schema_result = cursor.fetchone()
+        if not schema_result:
+            return jsonify({'error': 'Database schema not found for usage_data table.'}), 500
+        
+        DATABASE_SCHEMA = schema_result[0]
+        conn.close()
+
+        sql_generation_prompt = get_sql_generation_prompt(DATABASE_SCHEMA)
         
         client = openai.OpenAI()
         completion = client.chat.completions.create(
@@ -90,81 +78,80 @@ def handle_llm_query():
                 {"role": "system", "content": sql_generation_prompt},
                 {"role": "user", "content": user_question}
             ],
-            temperature=0.0 # Low temperature for precise, deterministic SQL
+            temperature=0.0
         )
-        # Clean up the response from the LLM
         generated_sql = completion.choices[0].message.content.strip().replace('`', '')
 
-        # A minimal security check to prevent destructive or complex queries.
+        # Security check
         if not generated_sql.upper().startswith("SELECT"):
             raise ValueError("LLM generated a non-SELECT query. Aborting for safety.")
 
-        # === STEP 2: EXECUTE SQL -- Get the data from the database ===
+        # === STEP 2: EXECUTE SQL ===
         conn = get_db_connection()
         results = conn.execute(generated_sql).fetchall()
         conn.close()
 
         if not results:
             return jsonify({'answer': "I couldn't find any data that answers your question."})
+        
+        # === STEP 3: CIRCUIT BREAKER ===
+        if len(results) > MAX_ROWS_FOR_LLM_SUMMARY:
+            total_rows = len(results)
+            sample_data = [dict(row) for row in results[:10]]
+            human_answer = (
+                f"Your query returned {total_rows} rows, which is too large to summarize.\n"
+                f"Please try a more specific question (e.g., 'who were the top 5 most active users last week?').\n\n"
+                f"Here is a sample of the first 10 rows:\n"
+                f"{json.dumps(sample_data, indent=2)}"
+            )
+            return jsonify({'answer': human_answer})
 
-        # Convert the database result into a simple JSON string for the next prompt.
+        # === STEP 4: DATA-TO-TEXT ===
         data_from_db = json.dumps([dict(row) for row in results])
-
-        # === STEP 3: DATA-TO-TEXT -- Interpret the result and create a natural language answer ===
-        interpretation_prompt = f"""
-        You are a helpful data analyst assistant. Your job is to provide a concise, natural language answer to a user's question based on the data provided.
-        Do not just repeat the data; interpret it in a friendly and direct way. If the data is a list of items, summarize it if appropriate.
-        ---
-        User's Original Question: "{user_question}"
-        ---
-        Data Result from Database (in JSON format):
-        {data_from_db}
-        ---
-        Your concise, natural language answer:
-        """
+        interpretation_prompt = get_data_interpretation_prompt(user_question, data_from_db)
 
         final_completion = client.chat.completions.create(
-            model="gpt-3.5-turbo-0125", # Use a good, modern model for conversational responses
+            model="gpt-3.5-turbo-0125",
             messages=[
                 {"role": "system", "content": "You are a helpful data analyst assistant who provides clear, natural language answers based on data."},
                 {"role": "user", "content": interpretation_prompt}
             ],
-            temperature=0.5 # A little creativity is good for conversational answers
+            temperature=0.5
         )
         
         final_answer = final_completion.choices[0].message.content.strip()
-
         return jsonify({'answer': final_answer})
 
     except openai.APIError as e:
-        return jsonify({'answer': f"An error occurred with the OpenAI API: {e}"}), 500
+        error_message = f"An error occurred with the OpenAI API: {e}"
+        print(error_message)
+        return jsonify({'answer': error_message}), 500
     except Exception as e:
-        # Catches SQL errors, the security check error, or other issues.
-        return jsonify({'answer': f"An error occurred: {e}"}), 500
-
+        error_message = f"An internal server error occurred: {e}"
+        print(error_message)
+        return jsonify({'answer': error_message}), 500
 
 # --- 5. FRONTEND ROUTE ---
-
 @app.route('/')
 def index():
-    """Serves the main frontend page (templates/index.html)."""
     return render_template('index.html')
 
-
 # --- 6. MAIN EXECUTION BLOCK ---
-
 if __name__ == '__main__':
-    # This block runs when the script is executed directly.
-    
-    # It's important to have the 'database.py' script in the same directory.
-    # This ensures the database and table are created before starting the server.
     import database
+    import populate_database
+
+    print("Initializing database...")
     database.init_db()
+
+    conn = get_db_connection()
+    count = conn.execute("SELECT COUNT(id) FROM usage_data").fetchone()[0]
+    conn.close()
+
+    if count < 100:
+        print("Database appears to be empty or sparse. Populating with realistic test data...")
+        populate_database.main()
+    else:
+        print(f"Database already contains {count} records. Skipping population.")
     
-    # Adds sample data for testing purposes on each startup (in debug mode).
-    database.add_sample_data()
-    
-    # Run the Flask application.
-    # host='0.0.0.0' makes the server accessible on your local network.
-    # debug=True enables auto-reloading when code changes, which is great for development.
     app.run(host='0.0.0.0', port=5000, debug=True)
