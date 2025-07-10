@@ -35,9 +35,14 @@ def get_db_connection():
 
 # --- 4. API ENDPOINTS ---
 @app.route('/api/llm_query', methods=['POST'])
-def handle_llm_query():
+def llm_query():
     MAX_ROWS_FOR_LLM_SUMMARY = 50
     
+    data = request.get_json()
+    question = data.get('question', '')
+    page = int(data.get('page', 1))
+    page_size = int(data.get('page_size', 20))
+
     # Input validation
     if not request.is_json:
         return jsonify({'error': 'Request must be JSON'}), 400
@@ -85,6 +90,11 @@ def handle_llm_query():
         # Security check
         if not generated_sql.upper().startswith("SELECT"):
             raise ValueError("LLM generated a non-SELECT query. Aborting for safety.")
+
+        # Add pagination to SQL if it's a SELECT and not already limited
+        if generated_sql.strip().lower().startswith("select") and "limit" not in generated_sql.lower():
+            offset = (page - 1) * page_size
+            generated_sql = generated_sql.rstrip(";") + f" LIMIT {page_size} OFFSET {offset};"
 
         # === STEP 2: EXECUTE SQL ===
         conn = get_db_connection()
