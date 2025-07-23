@@ -1,5 +1,13 @@
-# database_tools.py
+# database/query_engine.py
 # Shared database query logic for both Flask web interface and MCP server
+
+import os
+import sys
+from pathlib import Path
+
+# Add project root to path
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
 
 import os
 import sqlite3
@@ -8,11 +16,15 @@ import openai
 from typing import Dict, List, Any, Tuple, Optional
 from dotenv import load_dotenv
 
+# Import our modules
+from database.connection import get_db_connection
+from core.prompts import get_sql_generation_prompt, get_data_interpretation_prompt
+
 # Load environment variables
 load_dotenv()
 
 # Database configuration
-DATABASE = 'usage.db'
+DATABASE = os.path.join(os.path.dirname(__file__), 'usage.db')
 
 # Token limit considerations for LLM processing
 MAX_ROWS_FOR_LLM_SUMMARY = 200  # Balanced limit for good performance and comprehensive analysis
@@ -35,10 +47,8 @@ class DatabaseQueryEngine:
             raise ValueError(f"Error initializing OpenAI client: {e}")
     
     def get_db_connection(self) -> sqlite3.Connection:
-        """Get database connection with row factory."""
-        conn = sqlite3.connect(DATABASE)
-        conn.row_factory = sqlite3.Row
-        return conn
+        """Get database connection using the centralized connection module."""
+        return get_db_connection()
     
     def validate_question(self, question: str) -> Tuple[bool, Optional[str]]:
         """
@@ -88,7 +98,7 @@ class DatabaseQueryEngine:
         
         # Import prompts (assuming they exist)
         try:
-            from prompts import get_sql_generation_prompt
+            from core.prompts import get_sql_generation_prompt
         except ImportError:
             # Fallback basic prompt if prompts.py doesn't exist
             schema = self.get_database_schema()
@@ -166,7 +176,7 @@ class DatabaseQueryEngine:
         
         # Try to import custom prompt, fallback to basic one
         try:
-            from prompts import get_data_interpretation_prompt
+            from core.prompts import get_data_interpretation_prompt
             interpretation_prompt = get_data_interpretation_prompt(question, data_json)
         except ImportError:
             interpretation_prompt = f"""

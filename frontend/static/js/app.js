@@ -158,7 +158,7 @@ async function performLlmQuery(question) {
             headers: {
                 'Content-Type': 'application/json',
             },
-            body: JSON.stringify({ question: question }),
+            body: JSON.stringify({ query: question }),
         });
 
         const data = await response.json();

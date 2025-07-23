@@ -1,12 +1,13 @@
 # populate_database.py
 
 import sqlite3
+import os
 import random
 from datetime import date, timedelta, datetime
 
 # --- 1. CORE CONFIGURATION ---
 
-DATABASE_FILE = 'usage.db'
+DATABASE_FILE = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'usage.db')
 NUM_INACTIVE_USERS = 15 # Number of users to make inactive for the last 30 days
 HISTORY_DAYS = 180    # Populate data for the last 6 months
 
