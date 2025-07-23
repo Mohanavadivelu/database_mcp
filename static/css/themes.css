@@ -1,34 +1,56 @@
-/* Theme Variables and Configuration */
+/* Modern Chat Theme Variables */
 :root {
-    /* Dark theme variables */
-    --bg-primary: #1e1e1e;
-    --bg-secondary: #000;
-    --bg-tertiary: #333;
-    --text-primary: #d4d4d4;
-    --text-secondary: #9cdcfe;
-    --text-accent: #569cd6;
-    --text-success: #6a9955;
-    --text-error: #f44747;
-    --border-color: #333;
-    --border-focus: #569cd6;
-    --button-bg: #569cd6;
-    --button-hover: #4a8ac9;
-    --sidebar-bg: #252526;
+    /* Chat theme variables - inspired by modern messaging apps */
+    --bg-primary: #ffffff;
+    --bg-secondary: #f8fafc;
+    --bg-tertiary: #f1f5f9;
+    --text-primary: #1e293b;
+    --text-secondary: #64748b;
+    --text-accent: #4a90e2;
+    --text-success: #10b981;
+    --text-error: #ef4444;
+    --border-color: #e2e8f0;
+    --border-focus: #4a90e2;
+    --button-bg: #4a90e2;
+    --button-hover: #3b82f6;
+    --sidebar-bg: #2563eb;
+    
+    /* Chat-specific colors */
+    --chat-user-bg: #4a90e2;
+    --chat-user-text: #ffffff;
+    --chat-bot-bg: #e5e7eb;
+    --chat-bot-text: #374151;
+    --chat-timestamp: #9ca3af;
+    --sidebar-text: #ffffff;
+    --sidebar-text-secondary: rgba(255, 255, 255, 0.7);
+    --sidebar-hover: rgba(255, 255, 255, 0.1);
+    --sidebar-active: rgba(255, 255, 255, 0.2);
 }
 
-[data-theme="light"] {
-    /* Light theme variables */
-    --bg-primary: #ffffff;
-    --bg-secondary: #f8f8f8;
-    --bg-tertiary: #e8e8e8;
-    --text-primary: #333333;
-    --text-secondary: #0066cc;
-    --text-accent: #0066cc;
-    --text-success: #008000;
-    --text-error: #cc0000;
-    --border-color: #cccccc;
-    --border-focus: #0066cc;
-    --button-bg: #0066cc;
-    --button-hover: #0052a3;
-    --sidebar-bg: #f0f0f0;
+[data-theme="dark"] {
+    /* Dark chat theme */
+    --bg-primary: #0f172a;
+    --bg-secondary: #1e293b;
+    --bg-tertiary: #334155;
+    --text-primary: #f8fafc;
+    --text-secondary: #94a3b8;
+    --text-accent: #60a5fa;
+    --text-success: #34d399;
+    --text-error: #f87171;
+    --border-color: #475569;
+    --border-focus: #60a5fa;
+    --button-bg: #3b82f6;
+    --button-hover: #2563eb;
+    --sidebar-bg: #1e40af;
+    
+    /* Dark chat-specific colors */
+    --chat-user-bg: #3b82f6;
+    --chat-user-text: #ffffff;
+    --chat-bot-bg: #374151;
+    --chat-bot-text: #e5e7eb;
+    --chat-timestamp: #6b7280;
+    --sidebar-text: #ffffff;
+    --sidebar-text-secondary: rgba(255, 255, 255, 0.7);
+    --sidebar-hover: rgba(255, 255, 255, 0.1);
+    --sidebar-active: rgba(255, 255, 255, 0.2);
 }

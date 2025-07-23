@@ -36,34 +36,59 @@ def get_db_connection():
 # --- 4. API ENDPOINTS ---
 @app.route('/api/llm_query', methods=['POST'])
 def llm_query():
-    MAX_ROWS_FOR_LLM_SUMMARY = 50
+    """
+    Main API endpoint that converts natural language questions into SQL queries,
+    executes them, and returns human-readable answers using LLM processing.
     
+    This function implements a 4-step pipeline:
+    1. Input validation and security checks
+    2. Text-to-SQL conversion using LLM
+    3. SQL execution and result processing
+    4. Data-to-text conversion for human-readable response
+    """
+    
+    # Step 0: Initialize constants and extract request parameters
+    # Token limit considerations:
+    # - GPT-3.5-turbo: 4,096 tokens (conservative: 200 rows)
+    # - GPT-3.5-turbo-0125: 16,385 tokens (optimal: 500 rows)
+    # - Each row ≈ 50-100 tokens, system prompt ≈ 300 tokens, response buffer ≈ 1000 tokens
+    MAX_ROWS_FOR_LLM_SUMMARY = 200  # Balanced limit for good performance and comprehensive analysis
+    
+    # Extract pagination parameters (for future use)
     data = request.get_json()
     question = data.get('question', '')
     page = int(data.get('page', 1))
     page_size = int(data.get('page_size', 20))
 
-    # Input validation
+    # Step 1: INPUT VALIDATION AND SECURITY CHECKS
+    print("🔍 Step 1: Validating input and performing security checks...")
+    
+    # 1.1: Ensure request is valid JSON
     if not request.is_json:
         return jsonify({'error': 'Request must be JSON'}), 400
     
+    # 1.2: Extract and validate the user question
     user_question = request.json.get('question', '').strip()
     if not user_question:
         return jsonify({'error': 'No question provided'}), 400
     
-    # Check for potentially harmful inputs
+    # 1.3: Security check - prevent SQL injection and harmful operations
     dangerous_keywords = ['DROP', 'DELETE', 'UPDATE', 'INSERT', 'ALTER', 'TRUNCATE']
     if any(keyword in user_question.upper() for keyword in dangerous_keywords):
         return jsonify({'error': 'Potentially harmful question detected'}), 400
     
+    # 1.4: Verify OpenAI API key is configured
     if not openai.api_key:
         return jsonify({'answer': "Server Error: OpenAI API key is not configured."}), 500
 
     try:
-        # Import prompts
+        # Step 2: PREPARE FOR TEXT-TO-SQL CONVERSION
+        print("📋 Step 2: Preparing database schema and LLM prompts...")
+        
+        # 2.1: Import prompt generation functions
         from prompts import get_sql_generation_prompt, get_data_interpretation_prompt
         
-        # === STEP 1: TEXT-TO-SQL ===
+        # 2.2: Retrieve database schema for the usage_data table
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("SELECT sql FROM sqlite_master WHERE type='table' AND name='usage_data'")
@@ -71,11 +96,16 @@ def llm_query():
         if not schema_result:
             return jsonify({'error': 'Database schema not found for usage_data table.'}), 500
         
-        DATABASE_SCHEMA = schema_result[0]
+        DATABASE_SCHEMA = schema_result[0]  # This contains the CREATE TABLE statement
         conn.close()
 
+        # 2.3: Generate the SQL generation prompt with schema context
         sql_generation_prompt = get_sql_generation_prompt(DATABASE_SCHEMA)
         
+        # Step 3: TEXT-TO-SQL CONVERSION USING LLM
+        print("🤖 Step 3: Converting natural language to SQL using LLM...")
+        
+        # 3.1: Initialize OpenAI client and make API call
         client = openai.OpenAI()
         completion = client.chat.completions.create(
             model="gpt-3.5-turbo",
@@ -83,28 +113,40 @@ def llm_query():
                 {"role": "system", "content": sql_generation_prompt},
                 {"role": "user", "content": user_question}
             ],
-            temperature=0.0
+            temperature=0.0  # Use deterministic output for SQL generation
         )
+        
+        # 3.2: Extract and clean the generated SQL
         generated_sql = completion.choices[0].message.content.strip().replace('`', '')
+        print(f"Generated SQL: {generated_sql}")
 
-        # Security check
+        # 3.3: Security validation - ensure only SELECT queries are executed
         if not generated_sql.upper().startswith("SELECT"):
             raise ValueError("LLM generated a non-SELECT query. Aborting for safety.")
 
-        # Add pagination to SQL if it's a SELECT and not already limited
+        # 3.4: Add pagination to SQL if not already present (for future pagination feature)
         if generated_sql.strip().lower().startswith("select") and "limit" not in generated_sql.lower():
             offset = (page - 1) * page_size
             generated_sql = generated_sql.rstrip(";") + f" LIMIT {page_size} OFFSET {offset};"
 
-        # === STEP 2: EXECUTE SQL ===
+        # Step 4: SQL EXECUTION AND RESULT PROCESSING
+        print("💾 Step 4: Executing SQL query and processing results...")
+        
+        # 4.1: Execute the generated SQL query
         conn = get_db_connection()
         results = conn.execute(generated_sql).fetchall()
         conn.close()
+        
+        print(f"Query returned {len(results)} rows")
 
+        # 4.2: Handle empty results
         if not results:
             return jsonify({'answer': "I couldn't find any data that answers your question."})
         
-        # === STEP 3: CIRCUIT BREAKER ===
+        # Step 5: CIRCUIT BREAKER - HANDLE LARGE RESULT SETS
+        print("🔄 Step 5: Checking result set size...")
+        
+        # 5.1: If results are too large, return sample data instead of LLM processing
         if len(results) > MAX_ROWS_FOR_LLM_SUMMARY:
             total_rows = len(results)
             sample_data = [dict(row) for row in results[:10]]
@@ -116,27 +158,42 @@ def llm_query():
             )
             return jsonify({'answer': human_answer})
 
-        # === STEP 4: DATA-TO-TEXT ===
+        # Step 6: DATA-TO-TEXT CONVERSION USING LLM
+        print("📝 Step 6: Converting data to human-readable response...")
+        
+        # 6.1: Prepare data for LLM interpretation
         data_from_db = json.dumps([dict(row) for row in results])
         interpretation_prompt = get_data_interpretation_prompt(user_question, data_from_db)
 
+        # 6.2: Generate human-readable interpretation of the data
         final_completion = client.chat.completions.create(
             model="gpt-3.5-turbo-0125",
             messages=[
                 {"role": "system", "content": "You are a helpful data analyst assistant who provides clear, natural language answers based on data."},
                 {"role": "user", "content": interpretation_prompt}
             ],
-            temperature=0.5
+            temperature=0.5  # Allow some creativity in response formatting
         )
         
+        # 6.3: Extract final answer and prepare response
         final_answer = final_completion.choices[0].message.content.strip()
-        return jsonify({'answer': final_answer, 'data': [dict(row) for row in results], 'question': user_question})
+        
+        # Step 7: RETURN SUCCESSFUL RESPONSE
+        print("✅ Step 7: Returning successful response to client...")
+        return jsonify({
+            'answer': final_answer,           # Human-readable response
+            'data': [dict(row) for row in results],  # Raw data for charts/export
+            'question': user_question         # Echo back the original question
+        })
 
+    # Step 8: ERROR HANDLING
     except openai.APIError as e:
+        print("❌ OpenAI API Error occurred")
         error_message = f"An error occurred with the OpenAI API: {e}"
         print(error_message)
         return jsonify({'answer': error_message}), 500
     except Exception as e:
+        print("❌ General error occurred")
         error_message = f"An internal server error occurred: {e}"
         print(error_message)
         return jsonify({'answer': error_message}), 500
@@ -149,7 +206,7 @@ def index():
 # --- 6. MAIN EXECUTION BLOCK ---
 if __name__ == '__main__':
     import database
-    import populate_database
+    import document.populate_database as populate_database
 
     print("Initializing database...")
     database.init_db()
@@ -164,4 +221,4 @@ if __name__ == '__main__':
     else:
         print(f"Database already contains {count} records. Skipping population.")
     
-    app.run(host='0.0.0.0', port=5010, debug=True)
+    app.run(host='0.0.0.0', port=5020, debug=True)
