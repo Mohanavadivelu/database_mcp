@@ -173,20 +173,19 @@ async function performLlmQuery(question) {
                 timestamp: new Date().toISOString()
             };
             
-            // Display the answer with action buttons
-            addLog(data.answer, 'response', true);
-
-            // Render chart if data is available
+            // Display the answer with embedded chart if data is available
             if (data.data && data.data.length > 0) {
                 try {
-                    renderChart(data.data, data.question);
-                    chartContainer.classList.remove('hidden');
+                    addLogWithChart(data.answer, data.data, data.question);
+                    chartContainer.classList.add('hidden'); // Hide the separate chart container
                 } catch (chartError) {
-                    console.error("Error rendering chart:", chartError);
-                    addLog(`⚠️ Chart rendering failed: ${chartError.message}`, 'error');
+                    console.error("Error rendering chat chart:", chartError);
+                    addLog(data.answer, 'response', true); // Fallback to text-only response
                     chartContainer.classList.add('hidden');
                 }
             } else {
+                // Display text-only response when no data for charts
+                addLog(data.answer, 'response', true);
                 chartContainer.classList.add('hidden');
             }
 

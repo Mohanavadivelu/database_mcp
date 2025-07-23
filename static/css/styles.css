@@ -127,6 +127,7 @@ body {
     color: var(--sidebar-text);
     position: relative;
     backdrop-filter: blur(10px);
+    min-height: 60px;
 }
 
 .history-item:hover {
@@ -135,58 +136,83 @@ body {
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
 }
 
-.history-item .query-text {
+.history-content {
+    padding-right: 80px; /* Make space for action buttons */
+}
+
+.query-text-full {
     font-weight: 500;
     line-height: 1.4;
     margin-bottom: 8px;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
+    word-wrap: break-word;
+    color: var(--sidebar-text);
+    /* Remove text truncation to show full query */
 }
 
-.history-item.favorite {
-    border-left: 4px solid var(--text-success);
-    background: rgba(16, 185, 129, 0.1);
+.history-timestamp {
+    font-size: 0.7em;
+    color: var(--sidebar-text-secondary);
+    opacity: 0.8;
 }
 
-.history-item.favorite::before {
-    content: '⭐';
+/* Top-right action buttons that appear on hover */
+.history-actions-top {
     position: absolute;
-    top: 8px;
+    top: 12px;
     right: 12px;
-    font-size: 0.75rem;
-}
-
-.history-actions {
     display: flex;
-    gap: 8px;
-    margin-top: 8px;
+    gap: 6px;
     opacity: 0;
     transition: opacity 0.2s ease;
+    z-index: 2;
 }
 
-.history-item:hover .history-actions {
+.history-item:hover .history-actions-top {
     opacity: 1;
 }
 
-.history-actions button {
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.2);
-    color: var(--sidebar-text-secondary);
+.history-actions-top button {
+    background: rgba(0, 0, 0, 0.7);
+    border: 1px solid rgba(255, 255, 255, 0.3);
+    color: white;
     cursor: pointer;
-    padding: 6px;
-    font-size: 0.75rem;
-    border-radius: 6px;
+    padding: 8px;
+    font-size: 0.8rem;
+    border-radius: 8px;
     transition: all 0.2s ease;
-    backdrop-filter: blur(5px);
+    backdrop-filter: blur(10px);
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
 }
 
-.history-actions button:hover {
-    background: rgba(255, 255, 255, 0.2);
-    color: var(--sidebar-text);
-    transform: scale(1.05);
+.history-actions-top button.action-play {
+    background: rgba(34, 197, 94, 0.8);
+    border-color: rgba(34, 197, 94, 0.6);
+}
+
+.history-actions-top button.action-play:hover {
+    background: rgba(34, 197, 94, 1);
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(34, 197, 94, 0.4);
+}
+
+.history-actions-top button.action-delete {
+    background: rgba(239, 68, 68, 0.8);
+    border-color: rgba(239, 68, 68, 0.6);
+}
+
+.history-actions-top button.action-delete:hover {
+    background: rgba(239, 68, 68, 1);
+    transform: scale(1.1);
+    box-shadow: 0 4px 12px rgba(239, 68, 68, 0.4);
+}
+
+/* Remove old history actions styling */
+.history-actions {
+    display: none;
 }
 
 /* --- Chat Console Area --- */
@@ -211,7 +237,7 @@ body {
 .log-entry {
     margin-bottom: 16px;
     position: relative;
-    max-width: 70%;
+    max-width: 85%; /* Increase max width for better chart display */
     word-wrap: break-word;
     line-height: 1.5;
     animation: messageSlideIn 0.3s ease-out;
@@ -237,6 +263,7 @@ body {
     border-radius: 20px 20px 20px 4px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
     position: relative;
+    max-width: 95%; /* Allow wider response bubbles for charts */
 }
 
 .log-entry.error {
@@ -276,6 +303,51 @@ body {
 
 .log-entry:hover .log-actions {
     opacity: 1;
+}
+
+/* Chart container within chat messages */
+.chat-chart-container {
+    margin: 1rem 0;
+    padding: 1.5rem;
+    background: var(--chart-container-bg, rgba(255, 255, 255, 0.05));
+    border-radius: 0.75rem;
+    border: 1px solid var(--chart-container-border, rgba(255, 255, 255, 0.1));
+    backdrop-filter: blur(10px);
+    min-height: 400px;
+}
+
+.chat-chart-container canvas {
+    width: 100% !important;
+    height: 350px !important;
+    border-radius: 0.5rem;
+    background: rgba(255, 255, 255, 0.02);
+}
+
+.chat-chart-actions {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+    flex-wrap: wrap;
+}
+
+.chat-chart-actions button {
+    padding: 0.5rem 0.75rem;
+    font-size: 0.8rem;
+    border-radius: 0.5rem;
+    background: var(--secondary-btn-bg);
+    color: var(--secondary-btn-text);
+    border: 1px solid var(--secondary-btn-border);
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.chat-chart-actions button:hover {
+    background: var(--secondary-btn-hover-bg);
+    transform: translateY(-1px);
+}
+
+.chat-chart-actions button i {
+    margin-right: 0.25rem;
 }
 
 .log-actions button {

@@ -74,6 +74,82 @@ function addLog(message, type, withActions = false) {
 }
 
 /**
+ * Adds a response with an embedded chart to the chat.
+ * @param {string} message - The text response.
+ * @param {Array} data - The data for chart rendering.
+ * @param {string} question - The original question for chart context.
+ * @returns {HTMLElement} The new log element created.
+ */
+function addLogWithChart(message, data, question) {
+    const logEntry = document.createElement('div');
+    logEntry.className = 'log-entry response fade-in with-actions';
+    
+    // Create message content
+    const messageDiv = document.createElement('div');
+    messageDiv.textContent = message;
+    logEntry.appendChild(messageDiv);
+    
+    // Create chart container if data is available
+    if (data && data.length > 0) {
+        const chartContainer = document.createElement('div');
+        chartContainer.className = 'chat-chart-container';
+        
+        // Create chart actions
+        const actionsDiv = document.createElement('div');
+        actionsDiv.className = 'chat-chart-actions';
+        actionsDiv.innerHTML = `
+            <button onclick="exportChatChart(this)" title="Export Chart as PNG">
+                <i class="fas fa-download"></i> PNG
+            </button>
+            <button onclick="exportChatData(this, 'csv')" title="Export Data as CSV">
+                <i class="fas fa-file-csv"></i> CSV
+            </button>
+            <button onclick="exportChatData(this, 'json')" title="Export Data as JSON">
+                <i class="fas fa-file-code"></i> JSON
+            </button>
+        `;
+        chartContainer.appendChild(actionsDiv);
+        
+        // Create canvas for chart
+        const canvas = document.createElement('canvas');
+        canvas.id = `chat-chart-${Date.now()}`;
+        canvas.width = 800;
+        canvas.height = 400;
+        canvas.style.width = '100%';
+        canvas.style.height = '350px';
+        chartContainer.appendChild(canvas);
+        
+        logEntry.appendChild(chartContainer);
+        
+        // Store data for export functionality
+        logEntry.dataset.chartData = JSON.stringify(data);
+        logEntry.dataset.question = question;
+        
+        // Render chart after DOM insertion
+        consoleDiv.appendChild(logEntry);
+        renderChatChart(canvas, data, question);
+    } else {
+        consoleDiv.appendChild(logEntry);
+    }
+    
+    // Add response actions
+    const actionsDiv = document.createElement('div');
+    actionsDiv.className = 'log-actions';
+    actionsDiv.innerHTML = `
+        <button onclick="copyToClipboard(this)" title="Copy to clipboard">
+            <i class="fas fa-copy"></i>
+        </button>
+        <button onclick="shareResponse(this)" title="Share">
+            <i class="fas fa-share"></i>
+        </button>
+    `;
+    logEntry.appendChild(actionsDiv);
+    
+    scrollToBottom();
+    return logEntry;
+}
+
+/**
  * Creates and shows a loading indicator.
  */
 function showLoadingIndicator() {
@@ -102,6 +178,79 @@ function hideLoadingIndicator() {
 function clearConsole() {
     consoleDiv.innerHTML = '';
     document.getElementById('chart-container').classList.add('hidden');
+    // Clear all chat chart instances
+    if (typeof chatChartInstances !== 'undefined') {
+        chatChartInstances.forEach(chart => chart.destroy());
+        chatChartInstances.clear();
+    }
+}
+
+/**
+ * Export chart from chat message as PNG.
+ */
+function exportChatChart(button) {
+    const logEntry = button.closest('.log-entry');
+    const canvas = logEntry.querySelector('canvas');
+    if (!canvas) {
+        addLog('❌ No chart available to export', 'error');
+        return;
+    }
+    
+    try {
+        const url = canvas.toDataURL('image/png');
+        const link = document.createElement('a');
+        link.download = `chat-chart-${Date.now()}.png`;
+        link.href = url;
+        link.click();
+        
+        addLog('✅ Chart exported successfully', 'response');
+    } catch (error) {
+        addLog(`❌ Export failed: ${error.message}`, 'error');
+    }
+}
+
+/**
+ * Export data from chat message.
+ */
+function exportChatData(button, format) {
+    const logEntry = button.closest('.log-entry');
+    const data = JSON.parse(logEntry.dataset.chartData || '[]');
+    const question = logEntry.dataset.question || '';
+    
+    if (!data || data.length === 0) {
+        addLog('❌ No data available to export', 'error');
+        return;
+    }
+    
+    try {
+        let content, filename, mimeType;
+        
+        if (format === 'csv') {
+            content = convertToCSV(data);
+            filename = `chat-data-${Date.now()}.csv`;
+            mimeType = 'text/csv';
+        } else if (format === 'json') {
+            content = JSON.stringify({
+                query: question,
+                timestamp: new Date().toISOString(),
+                results: data
+            }, null, 2);
+            filename = `chat-data-${Date.now()}.json`;
+            mimeType = 'application/json';
+        }
+        
+        const blob = new Blob([content], { type: mimeType });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = filename;
+        link.click();
+        URL.revokeObjectURL(url);
+        
+        addLog(`✅ Data exported as ${format.toUpperCase()} successfully`, 'response');
+    } catch (error) {
+        addLog(`❌ Export failed: ${error.message}`, 'error');
+    }
 }
 
 function convertToCSV(data) {

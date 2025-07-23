@@ -2,6 +2,7 @@
 
 let myChartInstance = null;
 let lastQueryData = null;
+let chatChartInstances = new Map(); // Store multiple chat chart instances
 
 // Export functionality
 function exportChart(format) {
@@ -180,4 +181,312 @@ function renderChart(data, question) {
     }
 
     myChartInstance = new Chart(ctx, chartConfig);
+}
+
+/**
+ * Renders a chart within a chat message bubble.
+ * @param {HTMLCanvasElement} canvas - The canvas element within the chat message.
+ * @param {Array<Object>} data - The raw data from the database.
+ * @param {string} question - The original user question.
+ */
+function renderChatChart(canvas, data, question) {
+    const ctx = canvas.getContext('2d');
+    let chartConfig;
+
+    // Simple heuristics to determine chart type based on data structure and question
+    const keys = Object.keys(data[0]);
+    const isAggregation = keys.includes('result') && keys.length === 2; // e.g., user, result or app, result
+
+    if (isAggregation) {
+        // Bar chart for aggregates like counts or sums per category
+        const labels = data.map(item => {
+            const label = Object.values(item)[0];
+            // Truncate long labels for better display
+            return String(label).length > 12 ? String(label).substring(0, 12) + '...' : String(label);
+        });
+        const values = data.map(item => item.result);
+
+        chartConfig = {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Hours',
+                    data: values,
+                    backgroundColor: 'rgba(74, 144, 226, 0.8)',
+                    borderColor: 'rgba(74, 144, 226, 1)',
+                    borderWidth: 2,
+                    borderRadius: 4,
+                    borderSkipped: false,
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: {
+                            color: 'rgba(255, 255, 255, 0.9)',
+                            font: {
+                                size: 12,
+                                weight: 'bold'
+                            },
+                            padding: 20
+                        }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Usage Analysis',
+                        color: 'rgba(255, 255, 255, 0.9)',
+                        font: {
+                            size: 16,
+                            weight: 'bold'
+                        },
+                        padding: {
+                            top: 10,
+                            bottom: 30
+                        }
+                    },
+                    tooltip: {
+                        backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                        titleColor: '#fff',
+                        bodyColor: '#fff',
+                        borderColor: 'rgba(74, 144, 226, 1)',
+                        borderWidth: 1,
+                        cornerRadius: 6,
+                        displayColors: false,
+                        callbacks: {
+                            title: function(context) {
+                                // Show full label in tooltip
+                                const originalLabel = Object.values(data[context[0].dataIndex])[0];
+                                return String(originalLabel);
+                            },
+                            label: function(context) {
+                                const value = context.parsed.y;
+                                const hours = Math.floor(value / 3600);
+                                const minutes = Math.floor((value % 3600) / 60);
+                                return `${hours}h ${minutes}m (${value.toLocaleString()} seconds)`;
+                            }
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)',
+                            lineWidth: 1
+                        },
+                        ticks: {
+                            color: 'rgba(255, 255, 255, 0.8)',
+                            font: {
+                                size: 12
+                            },
+                            callback: function(value) {
+                                // Convert seconds to hours for display
+                                const hours = Math.floor(value / 3600);
+                                return hours + 'h';
+                            }
+                        },
+                        title: {
+                            display: true,
+                            text: 'Hours',
+                            color: 'rgba(255, 255, 255, 0.9)',
+                            font: {
+                                size: 14,
+                                weight: 'bold'
+                            }
+                        }
+                    },
+                    x: {
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)',
+                            lineWidth: 1
+                        },
+                        ticks: {
+                            color: 'rgba(255, 255, 255, 0.8)',
+                            font: {
+                                size: 11
+                            },
+                            maxRotation: 45,
+                            minRotation: 0
+                        },
+                        title: {
+                            display: true,
+                            text: 'Users',
+                            color: 'rgba(255, 255, 255, 0.9)',
+                            font: {
+                                size: 14,
+                                weight: 'bold'
+                            }
+                        }
+                    }
+                },
+                layout: {
+                    padding: {
+                        top: 20,
+                        bottom: 20,
+                        left: 20,
+                        right: 20
+                    }
+                }
+            }
+        };
+    } else if (keys.includes('date') || keys.includes('timestamp') || keys.includes('time')) {
+        // Line chart for time series data
+        const timeKey = keys.find(k => k.includes('date') || k.includes('timestamp') || k.includes('time'));
+        const valueKey = keys.find(k => k !== timeKey);
+        
+        chartConfig = {
+            type: 'line',
+            data: {
+                labels: data.map(item => item[timeKey]),
+                datasets: [{
+                    label: valueKey,
+                    data: data.map(item => item[valueKey]),
+                    borderColor: 'rgba(74, 144, 226, 1)',
+                    backgroundColor: 'rgba(74, 144, 226, 0.1)',
+                    tension: 0.4,
+                    fill: true,
+                    borderWidth: 3,
+                    pointBackgroundColor: 'rgba(74, 144, 226, 1)',
+                    pointBorderColor: '#fff',
+                    pointBorderWidth: 2,
+                    pointRadius: 5
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top',
+                        labels: {
+                            color: 'rgba(255, 255, 255, 0.9)',
+                            font: {
+                                size: 12,
+                                weight: 'bold'
+                            }
+                        }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Trend Analysis',
+                        color: 'rgba(255, 255, 255, 0.9)',
+                        font: {
+                            size: 16,
+                            weight: 'bold'
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                            color: 'rgba(255, 255, 255, 0.8)',
+                            font: {
+                                size: 12
+                            }
+                        }
+                    },
+                    x: {
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                            color: 'rgba(255, 255, 255, 0.8)',
+                            font: {
+                                size: 11
+                            },
+                            maxRotation: 45
+                        }
+                    }
+                },
+                layout: {
+                    padding: 20
+                }
+            }
+        };
+    } else {
+        // Default to a simple bar chart
+        const labels = data.map((item, index) => `Item ${index + 1}`);
+        const values = data.map(item => Object.values(item)[0]);
+
+        chartConfig = {
+            type: 'bar',
+            data: {
+                labels: labels,
+                datasets: [{
+                    label: 'Values',
+                    data: values,
+                    backgroundColor: 'rgba(74, 144, 226, 0.8)',
+                    borderColor: 'rgba(74, 144, 226, 1)',
+                    borderWidth: 2,
+                    borderRadius: 4
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    legend: {
+                        display: true,
+                        labels: {
+                            color: 'rgba(255, 255, 255, 0.9)',
+                            font: {
+                                size: 12
+                            }
+                        }
+                    },
+                    title: {
+                        display: true,
+                        text: 'Data Visualization',
+                        color: 'rgba(255, 255, 255, 0.9)',
+                        font: {
+                            size: 16,
+                            weight: 'bold'
+                        }
+                    }
+                },
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                            color: 'rgba(255, 255, 255, 0.8)',
+                            font: {
+                                size: 12
+                            }
+                        }
+                    },
+                    x: {
+                        grid: {
+                            color: 'rgba(255, 255, 255, 0.1)'
+                        },
+                        ticks: {
+                            color: 'rgba(255, 255, 255, 0.8)',
+                            font: {
+                                size: 11
+                            }
+                        }
+                    }
+                },
+                layout: {
+                    padding: 20
+                }
+            }
+        };
+    }
+
+    // Create and store chart instance
+    const chartInstance = new Chart(ctx, chartConfig);
+    chatChartInstances.set(canvas.id, chartInstance);
 }

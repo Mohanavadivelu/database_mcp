@@ -1,15 +1,13 @@
 /* Query History Management */
 
 let queryHistory = JSON.parse(localStorage.getItem('queryHistory') || '[]');
-let favorites = JSON.parse(localStorage.getItem('favorites') || '[]');
 
 // History management
 function addToHistory(query) {
     const historyItem = {
         id: Date.now(),
         query: query,
-        timestamp: new Date().toISOString(),
-        favorite: false
+        timestamp: new Date().toISOString()
     };
     
     queryHistory.unshift(historyItem);
@@ -31,22 +29,21 @@ function renderHistory() {
 
     queryHistory.forEach(item => {
         const historyItem = document.createElement('div');
-        historyItem.className = `history-item ${item.favorite ? 'favorite' : ''}`;
+        historyItem.className = 'history-item';
         historyItem.innerHTML = `
-            <div class="query-text">${item.query}</div>
-            <div class="history-actions">
-                <button onclick="toggleFavorite(${item.id})" title="${item.favorite ? 'Remove from favorites' : 'Add to favorites'}">
-                    <i class="fas fa-star${item.favorite ? '' : '-o'}"></i>
-                </button>
-                <button onclick="rerunQuery('${item.query.replace(/'/g, "\\'")}'))" title="Run again">
+            <div class="history-content">
+                <div class="query-text-full">${item.query}</div>
+                <div class="history-timestamp">
+                    ${new Date(item.timestamp).toLocaleString()}
+                </div>
+            </div>
+            <div class="history-actions-top">
+                <button onclick="rerunQuery('${item.query.replace(/'/g, "\\'")}'))" title="Load/Run Query" class="action-play">
                     <i class="fas fa-play"></i>
                 </button>
-                <button onclick="removeFromHistory(${item.id})" title="Remove">
+                <button onclick="removeFromHistory(${item.id})" title="Delete Query" class="action-delete">
                     <i class="fas fa-trash"></i>
                 </button>
-            </div>
-            <div style="font-size: 0.7em; color: var(--text-secondary); margin-top: 3px;">
-                ${new Date(item.timestamp).toLocaleString()}
             </div>
         `;
         
@@ -63,15 +60,6 @@ function renderHistory() {
         
         historyList.appendChild(historyItem);
     });
-}
-
-function toggleFavorite(id) {
-    const item = queryHistory.find(q => q.id === id);
-    if (item) {
-        item.favorite = !item.favorite;
-        localStorage.setItem('queryHistory', JSON.stringify(queryHistory));
-        renderHistory();
-    }
 }
 
 function rerunQuery(query) {
